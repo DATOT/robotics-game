@@ -125,6 +125,38 @@ func has_ceiling_near(into_wall: Vector2) -> bool:
 	)
 	return not space.intersect_ray(query).is_empty()
 
+# Returns the half extents of the player's collision shape.
+func get_collision_extents() -> Vector2:
+	for child in get_children():
+		if child is CollisionShape2D and child.shape != null:
+			var shape: Shape2D = child.shape
+			if shape is RectangleShape2D:
+				return shape.size * 0.5
+			elif shape is CapsuleShape2D:
+				return Vector2(shape.radius, shape.height * 0.5)
+			elif shape is CircleShape2D:
+				return Vector2(shape.radius, shape.radius)
+	return Vector2(8.0, 8.0)
+
+# Probes horizontally for a wall, scanning several vertical offsets so walls that sit
+# above or below the player's center (ceiling overhangs, ledges under the feet) are found.
+# Only normals that are mostly horizontal are returned.
+func probe_wall_with_offsets(direction: Vector2, vertical_offsets: Array) -> Vector2:
+	var space := get_world_2d().direct_space_state
+	for off in vertical_offsets:
+		var from := global_position + Vector2(0.0, off)
+		var query := PhysicsRayQueryParameters2D.create(
+			from,
+			from + direction.normalized() * CLIMB_PROBE_REACH,
+			collision_mask,
+			[get_rid()]
+		)
+		var hit := space.intersect_ray(query)
+		if not hit.is_empty():
+			var n: Vector2 = hit.get("normal", Vector2.ZERO)
+			if absf(n.x) > 0.3:
+				return n
+	return Vector2.ZERO
 
 func probe_wall_normal(direction: Vector2) -> Vector2:
 	var space := get_world_2d().direct_space_state
