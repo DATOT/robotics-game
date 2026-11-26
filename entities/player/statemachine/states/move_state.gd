@@ -9,29 +9,20 @@ const WALL_HOLD_FORCE := 980.0
 const CLIMB_SPEED := 60.0
 const WALL_NORMAL_THRESHOLD := 0.3
 
-# Maximum distance the player is allowed to climb upward from the start of the wall climb.
-const MAX_CLIMB_HEIGHT := 128.0
-
 const CEILING_SPEED := 60.0
 const CEILING_ACCEL := 900.0
 const CEILING_DECEL := 800.0
-# Constant upward push so move_and_slide() keeps reporting is_on_ceiling().
 const CEILING_STICK_SPEED := 60.0
-# How long we tolerate not touching the ceiling (tile seam) before falling.
 const CEILING_LOSS_GRACE := 0.1
-# Left/right are swapped while upside down. This also makes a held key flow naturally
-# around corners (see the wall<->ceiling transitions below).
 const CEILING_REVERSE_CONTROLS := true
-# After wrapping around a corner, how long we wait to touch the new surface.
 const CORNER_GRACE := 0.15
+const WALL_SNAP_EPSILON := 0.5
 
 var wall_climbing := false
 var on_ceiling := false
 var wall_normal := Vector2.ZERO
-# Highest point (smallest global y) the raycast found on this wall.
+# Highest point found by the wall-height raycast.
 var climb_top_y := -INF
-# Global Y position where the wall climb started.
-var climb_start_y := 0.0
 
 var _ceiling_grace := CEILING_LOSS_GRACE
 var _wall_grace := 0.0
@@ -40,10 +31,6 @@ func _ready() -> void:
 	animated_sprite.play("move")
 
 func _exit_tree() -> void:
-	# Leaving this state while upside down (damage, laser, fall...): undo the ceiling visuals.
-	if on_ceiling and is_instance_valid(animated_sprite):
-		animated_sprite.flip_h = not animated_sprite.flip_h
-		animated_sprite.rotation = 0.0
 	if on_ceiling and is_instance_valid(animated_sprite):
 		animated_sprite.flip_h = not animated_sprite.flip_h
 		animated_sprite.rotation = 0.0
@@ -54,8 +41,8 @@ func _physics_process(delta: float) -> void:
 		wall_climbing = false
 		_leave_ceiling()
 
-	var input_dir := (Input.is_action_pressed("ui_right") as int) - (Input.is_action_pressed("ui_left") as int)
-	var v_input := (Input.is_action_pressed("ui_down") as int) - (Input.is_action_pressed("ui_up") as int)
+	var input_dir := (int(Input.is_action_pressed("ui_right")) - int(Input.is_action_pressed("ui_left")))
+	var v_input := (int(Input.is_action_pressed("ui_down")) - int(Input.is_action_pressed("ui_up")))
 
 	if on_ceiling:
 		_process_ceiling(delta, input_dir, v_input)
@@ -65,14 +52,13 @@ func _physics_process(delta: float) -> void:
 		not wall_climbing
 		and not persistent_state.is_climb_disabled()
 		and persistent_state.is_on_wall()
-		and (input_dir != 0.0 or v_input != 0.0)
+		and (input_dir != 0 or v_input != 0)
 	):
-		var normal = persistent_state.get_wall_normal()
-		var pressing_into_wall = (
-			(input_dir < 0.0 and normal.x > WALL_NORMAL_THRESHOLD)
-			or (input_dir > 0.0 and normal.x < -WALL_NORMAL_THRESHOLD)
+		var normal := persistent_state.get_wall_normal()
+		var pressing_into_wall := (
+			(input_dir < 0 and normal.x > WALL_NORMAL_THRESHOLD)
+			or (input_dir > 0 and normal.x < -WALL_NORMAL_THRESHOLD)
 		)
-		# Resume a climb from a wall hang, OR start a new climb by pressing into the wall.
 		if pressing_into_wall or persistent_state.wall_climb_start_valid:
 			_start_climbing(normal)
 
@@ -80,8 +66,8 @@ func _physics_process(delta: float) -> void:
 		_process_climbing(delta, input_dir, v_input)
 		return
 
-	if input_dir != 0.0:
-		animated_sprite.flip_h = input_dir < 0.0
+	if input_dir != 0:
+		animated_sprite.flip_h = input_dir < 0
 		persistent_state.velocity.x = move_toward(
 			persistent_state.velocity.x,
 			input_dir * MOVE_SPEED,
@@ -97,32 +83,28 @@ func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
 
 	if not persistent_state.is_on_floor():
-		# Walking off a ledge: grab the wall we just stepped off and climb down it.
-		# Falls normally if no wall is within reach.
 		if _try_wrap_floor_to_wall(input_dir):
 			return
 		change_state.call("fall")
-	elif abs(persistent_state.velocity.x) < 1.0 and input_dir == 0.0:
+	elif absf(persistent_state.velocity.x) < 1.0 and input_dir == 0:
 		change_state.call("idle")
 
 # ---------------------------------------------------------------- wall
 
-func _start_climbing(normal: Vector2, probe_from := 0.0) -> void:
+func _start_climbing(normal: Vector2, probe_from: float = 0.0) -> void:
+	if absf(normal.x) < WALL_NORMAL_THRESHOLD:
+		return
 	wall_climbing = true
+	on_ceiling = false
 	wall_normal = normal
 	persistent_state.wall_climb_start_valid = true
-	climb_start_y = persistent_state.global_position.y
 
-	# Raycast the wall to see how far up it goes.
+	# The climb limit comes from raycasts up the wall, not a hard-coded height.
 	var climb_height: float = persistent_state.detect_climb_height(normal, probe_from)
 	climb_top_y = persistent_state.global_position.y - climb_height
-
 	_apply_visual_rotation()
 
 func _process_climbing(delta: float, input_dir: float, v_input: float) -> void:
-	# Vertical climb direction:
-	#  - v_input (ui_up/ui_down) takes priority when given.
-	#  - otherwise horizontal input toward the wall = up, away from wall = down.
 	var climb_velocity_y := 0.0
 	if v_input != 0.0:
 		climb_velocity_y = v_input * CLIMB_SPEED
@@ -130,7 +112,6 @@ func _process_climbing(delta: float, input_dir: float, v_input: float) -> void:
 		climb_velocity_y = wall_normal.x * input_dir * CLIMB_SPEED
 
 	if not persistent_state.is_on_wall():
-		# Climbing down past the bottom edge of a platform: wrap onto its underside.
 		if climb_velocity_y > 0.0 and _try_wrap_wall_to_ceiling():
 			return
 		if _wall_grace <= 0.0:
@@ -139,15 +120,13 @@ func _process_climbing(delta: float, input_dir: float, v_input: float) -> void:
 		_wall_grace -= delta
 	else:
 		_wall_grace = 0.0
-		var normal = persistent_state.get_wall_normal()
-		if normal != Vector2.ZERO:
+		var normal := persistent_state.get_wall_normal()
+		if absf(normal.x) > WALL_NORMAL_THRESHOLD:
 			wall_normal = normal
 			_apply_visual_rotation()
 
-	# Pull toward the wall to hold position.
 	persistent_state.velocity += -wall_normal * WALL_HOLD_FORCE * delta
 
-	# No input -> stop and hang in Idle, keeping rotation.
 	if input_dir == 0.0 and v_input == 0.0:
 		persistent_state.velocity.y = 0.0
 		persistent_state.move_and_slide()
@@ -156,17 +135,13 @@ func _process_climbing(delta: float, input_dir: float, v_input: float) -> void:
 		return
 
 	var climbing_up := climb_velocity_y < 0.0
-
-	# Check if we have exceeded the max climb height limit
-	if climbing_up and (climb_start_y - persistent_state.global_position.y) > MAX_CLIMB_HEIGHT:
-		_end_climb()
-		change_state.call("fall")
-		return
-
-	# Reached the top of the wall found by the raycast: step up onto the floor.
-	if climbing_up and persistent_state.global_position.y <= climb_top_y:
-		_mantle_onto_floor()
-		return
+	# Stop exactly at the raycast-detected top of this wall; do not mantle onto the ledge.
+	if climbing_up:
+		var distance_to_top := persistent_state.global_position.y - climb_top_y
+		if distance_to_top <= 0.0:
+			_end_climb()
+			return
+		climb_velocity_y = maxf(climb_velocity_y, -distance_to_top / delta)
 
 	persistent_state.velocity.y = climb_velocity_y
 	persistent_state.move_and_slide()
@@ -175,35 +150,12 @@ func _process_climbing(delta: float, input_dir: float, v_input: float) -> void:
 		_enter_ceiling()
 	elif persistent_state.is_on_floor() and not climbing_up:
 		_end_climb()
-
-func _mantle_onto_floor() -> void:
-	var half := persistent_state.get_collision_extents()
-	# Fixes left vs right wall offset calculation by ensuring proper direction factoring
-	var into_platform := 1.0 if wall_normal.x > 0.0 else -1.0
-	var start := persistent_state.global_position
-	
-	# Compute clean target coordinates on top of the platform
-	var target_pos := Vector2(
-		start.x + into_platform * half.x,
-		climb_top_y - half.y
-	)
-
-	animated_sprite.rotation = 0.0
-	persistent_state.wall_climb_start_valid = false
-	wall_climbing = false
-	persistent_state.velocity = Vector2.ZERO
-
-	# Instantly snap position and update graphics rotation properly
-	persistent_state.global_position = target_pos
-	persistent_state.move_and_slide()
-
-	change_state.call("idle")
+	elif climbing_up and persistent_state.global_position.y <= climb_top_y + WALL_SNAP_EPSILON:
+		_end_climb()
 
 func _try_wrap_floor_to_wall(input_dir: int) -> bool:
-	if input_dir == 0:
+	if input_dir == 0 or persistent_state.is_climb_disabled():
 		return false
-	# The platform we just walked off of is behind us (opposite to travel direction).
-	# Scan downward because the wall face sits below the player's center.
 	var normal := persistent_state.probe_wall_with_offsets(
 		Vector2(-signf(input_dir), 0.0),
 		[4.0, 12.0, 20.0, 28.0, 36.0]
@@ -220,26 +172,8 @@ func _try_wrap_wall_to_ceiling() -> bool:
 	if not persistent_state.has_ceiling_near(into_wall):
 		return false
 	_enter_ceiling()
-	# Slide in under the platform; the ceiling needs a moment to be touched.
 	persistent_state.velocity = Vector2(into_wall.x * CEILING_SPEED, -CEILING_STICK_SPEED)
 	_ceiling_grace = CORNER_GRACE
-	return true
-
-func _try_wrap_ceiling_to_wall(dir: int) -> bool:
-	if dir == 0:
-		return false
-	# The platform we just left is behind us (opposite to travel) and above us.
-	var normal: Vector2 = persistent_state.probe_wall_with_offsets(
-		Vector2(-signf(dir), 0.0),
-		[-4.0, -12.0, -20.0, -28.0, -36.0]
-	)
-	if normal == Vector2.ZERO:
-		return false
-	_leave_ceiling(true)
-	_start_climbing(normal, persistent_state.CORNER_PROBE_UP)
-	# Push into the wall right away so the hold force doesn't have to close the gap.
-	persistent_state.velocity = -normal * CLIMB_SPEED
-	_wall_grace = CORNER_GRACE
 	return true
 
 func _apply_visual_rotation() -> void:
@@ -267,12 +201,10 @@ func _enter_ceiling() -> void:
 	persistent_state.wall_climb_start_valid = false
 	persistent_state.velocity = Vector2.ZERO
 	animated_sprite.rotation = PI
-	# Rotated by PI the sprite is mirrored in world space, so toggle flip_h to keep the
-	# same world-facing direction. _leave_ceiling() / _exit_tree() undo this.
 	animated_sprite.flip_h = not animated_sprite.flip_h
 	animated_sprite.play("idle")
 
-func _leave_ceiling(keep_rotation := false) -> void:
+func _leave_ceiling(keep_rotation: bool = false) -> void:
 	if not on_ceiling:
 		return
 	on_ceiling = false
@@ -284,7 +216,6 @@ func _process_ceiling(delta: float, input_dir: int, v_input: int) -> void:
 	var dir := -input_dir if CEILING_REVERSE_CONTROLS else input_dir
 
 	if dir != 0:
-		# Upside down: facing right in the world means flip_h = true.
 		animated_sprite.flip_h = dir > 0
 		animated_sprite.play("move")
 		persistent_state.velocity.x = move_toward(
@@ -294,7 +225,11 @@ func _process_ceiling(delta: float, input_dir: int, v_input: int) -> void:
 		)
 	else:
 		animated_sprite.play("idle")
-		persistent_state.velocity.x = move_toward(persistent_state.velocity.x, 0.0, CEILING_DECEL * delta)
+		persistent_state.velocity.x = move_toward(
+			persistent_state.velocity.x,
+			0.0,
+			CEILING_DECEL * delta
+		)
 
 	persistent_state.velocity.y = -CEILING_STICK_SPEED
 	persistent_state.move_and_slide()
@@ -302,7 +237,7 @@ func _process_ceiling(delta: float, input_dir: int, v_input: int) -> void:
 	if persistent_state.is_on_ceiling():
 		_ceiling_grace = CEILING_LOSS_GRACE
 	else:
-		# Moved past the edge of a platform: wrap around onto its side wall.
+		# Snap directly onto a wall below the ceiling edge when forward movement finds one.
 		if _try_wrap_ceiling_to_wall(dir):
 			return
 		_ceiling_grace -= delta
@@ -310,8 +245,8 @@ func _process_ceiling(delta: float, input_dir: int, v_input: int) -> void:
 			_drop()
 			return
 
-	# Inner corner: climb down the wall. Down key always works; with reversed controls
-	# simply holding the direction into the wall works too.
+	# Inner corner: transfer from ceiling to a wall when the player requests down,
+	# or presses toward the wall while ceiling controls are reversed.
 	if persistent_state.is_on_wall():
 		var normal := persistent_state.get_wall_normal()
 		var into_wall := (
@@ -322,6 +257,58 @@ func _process_ceiling(delta: float, input_dir: int, v_input: int) -> void:
 			_leave_ceiling(true)
 			_start_climbing(normal)
 
+# Probe forward at several lower heights. When a wall is found, snap the player
+# flush against it before starting the wall climb (no mantle/animation step).
+func _try_wrap_ceiling_to_wall(dir: int) -> bool:
+	if dir == 0 or persistent_state.is_climb_disabled():
+		return false
+
+	var probe_direction := Vector2(signf(dir), 0.0)
+	var space := persistent_state.get_world_2d().direct_space_state
+	var offsets: Array[float] = [0.0, 8.0, 16.0, 24.0, 32.0, 40.0]
+	var hit: Dictionary = {}
+	var hit_offset := 0.0
+
+	for offset in offsets:
+		var from := persistent_state.global_position + Vector2(0.0, offset)
+		var query := PhysicsRayQueryParameters2D.create(
+			from,
+			from + probe_direction * persistent_state.CLIMB_PROBE_REACH,
+			persistent_state.collision_mask,
+			[persistent_state.get_rid()]
+		)
+		var result := space.intersect_ray(query)
+		if not result.is_empty():
+			var normal: Vector2 = result.get("normal", Vector2.ZERO)
+			if absf(normal.x) > WALL_NORMAL_THRESHOLD:
+				hit = result
+				hit_offset = offset
+				break
+
+	if hit.is_empty():
+		return false
+
+	var wall_normal_found: Vector2 = hit.get("normal", Vector2.ZERO)
+	var half_extents: Vector2 = persistent_state.get_collision_extents()
+	var wall_point: Vector2 = hit.get("position", persistent_state.global_position)
+	var collision_center_offset := _get_collision_center_offset()
+	persistent_state.global_position = Vector2(
+		wall_point.x + wall_normal_found.x * (half_extents.x + WALL_SNAP_EPSILON) - collision_center_offset.x,
+		wall_point.y - collision_center_offset.y
+	)
+
+	_leave_ceiling(true)
+	_start_climbing(wall_normal_found, hit_offset)
+	persistent_state.velocity = Vector2.ZERO
+	_wall_grace = CORNER_GRACE
+	return true
+
+func _get_collision_center_offset() -> Vector2:
+	for child in persistent_state.get_children():
+		if child is CollisionShape2D:
+			return child.position
+	return Vector2.ZERO
+
 func _drop() -> void:
 	_leave_ceiling()
 	persistent_state.velocity = Vector2.ZERO
@@ -330,11 +317,9 @@ func _drop() -> void:
 # ------------------------------------------------------------- input
 
 func move_left() -> void:
-	if on_ceiling:
-		return
-	animated_sprite.flip_h = true
+	if not on_ceiling:
+		animated_sprite.flip_h = true
 
 func move_right() -> void:
-	if on_ceiling:
-		return
-	animated_sprite.flip_h = false
+	if not on_ceiling:
+		animated_sprite.flip_h = false
