@@ -21,7 +21,7 @@ const WALL_SNAP_EPSILON := 0.5
 var wall_climbing := false
 var on_ceiling := false
 var wall_normal := Vector2.ZERO
-# Highest point found by the wall-height raycast.
+# Highest point (smallest global y) found by the wall-height raycast.
 var climb_top_y := -INF
 
 var _ceiling_grace := CEILING_LOSS_GRACE
@@ -41,8 +41,8 @@ func _physics_process(delta: float) -> void:
 		wall_climbing = false
 		_leave_ceiling()
 
-	var input_dir := (int(Input.is_action_pressed("ui_right")) - int(Input.is_action_pressed("ui_left")))
-	var v_input := (int(Input.is_action_pressed("ui_down")) - int(Input.is_action_pressed("ui_up")))
+	var input_dir := int(Input.is_action_pressed("ui_right")) - int(Input.is_action_pressed("ui_left"))
+	var v_input := int(Input.is_action_pressed("ui_down")) - int(Input.is_action_pressed("ui_up"))
 
 	if on_ceiling:
 		_process_ceiling(delta, input_dir, v_input)
@@ -74,11 +74,7 @@ func _physics_process(delta: float) -> void:
 			MOVE_ACCEL * delta
 		)
 	else:
-		persistent_state.velocity.x = move_toward(
-			persistent_state.velocity.x,
-			0.0,
-			MOVE_DECEL * delta
-		)
+		persistent_state.velocity.x = move_toward(persistent_state.velocity.x, 0.0, MOVE_DECEL * delta)
 
 	super._physics_process(delta)
 
@@ -99,7 +95,7 @@ func _start_climbing(normal: Vector2, probe_from: float = 0.0) -> void:
 	wall_normal = normal
 	persistent_state.wall_climb_start_valid = true
 
-	# The climb limit comes from raycasts up the wall, not a hard-coded height.
+	# The climb limit is determined by horizontal raycasts scanning upward along the wall.
 	var climb_height: float = persistent_state.detect_climb_height(normal, probe_from)
 	climb_top_y = persistent_state.global_position.y - climb_height
 	_apply_visual_rotation()
@@ -135,11 +131,15 @@ func _process_climbing(delta: float, input_dir: float, v_input: float) -> void:
 		return
 
 	var climbing_up := climb_velocity_y < 0.0
-	# Stop exactly at the raycast-detected top of this wall; do not mantle onto the ledge.
 	if climbing_up:
 		var distance_to_top := persistent_state.global_position.y - climb_top_y
 		if distance_to_top <= 0.0:
-			_end_climb()
+			if _try_snap_onto_floor():
+				return
+			# The raycast found the top edge, but there is no walkable floor above it.
+			# Hold at the edge instead of forcibly dropping the player.
+			persistent_state.velocity = Vector2.ZERO
+			persistent_state.move_and_slide()
 			return
 		climb_velocity_y = maxf(climb_velocity_y, -distance_to_top / delta)
 
@@ -151,8 +151,10 @@ func _process_climbing(delta: float, input_dir: float, v_input: float) -> void:
 	elif persistent_state.is_on_floor() and not climbing_up:
 		_end_climb()
 	elif climbing_up and persistent_state.global_position.y <= climb_top_y + WALL_SNAP_EPSILON:
-		_end_climb()
+		if not _try_snap_onto_floor():
+			persistent_state.velocity = Vector2.ZERO
 
+# Same wall probe pattern as the working floor-to-wall transition.
 func _try_wrap_floor_to_wall(input_dir: int) -> bool:
 	if input_dir == 0 or persistent_state.is_climb_disabled():
 		return false
@@ -165,6 +167,36 @@ func _try_wrap_floor_to_wall(input_dir: int) -> bool:
 	_start_climbing(normal)
 	persistent_state.velocity = Vector2.ZERO
 	_wall_grace = CORNER_GRACE
+	return true
+
+func _try_snap_onto_floor() -> bool:
+	var extents := persistent_state.get_collision_extents()
+	var collision_offset := _get_collision_center_offset()
+	# Cast down just over the wall edge where the player's feet will land.
+	var floor_x := persistent_state.global_position.x - wall_normal.x * (extents.x + 1.0)
+	var from := Vector2(floor_x, climb_top_y - 8.0)
+	var to := Vector2(floor_x, climb_top_y + extents.y + 24.0)
+	var query := PhysicsRayQueryParameters2D.create(
+		from,
+		to,
+		persistent_state.collision_mask,
+		[persistent_state.get_rid()]
+	)
+	var hit := persistent_state.get_world_2d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return false
+
+	var floor_normal: Vector2 = hit.get("normal", Vector2.ZERO)
+	if floor_normal.dot(Vector2.UP) < 0.7:
+		return false
+
+	persistent_state.global_position.y = float(hit.position.y) - collision_offset.y - extents.y
+	persistent_state.velocity = Vector2.ZERO
+	persistent_state.wall_climb_start_valid = false
+	wall_climbing = false
+	animated_sprite.rotation = 0.0
+	persistent_state.move_and_slide()
+	change_state.call("idle")
 	return true
 
 func _try_wrap_wall_to_ceiling() -> bool:
@@ -237,7 +269,8 @@ func _process_ceiling(delta: float, input_dir: int, v_input: int) -> void:
 	if persistent_state.is_on_ceiling():
 		_ceiling_grace = CEILING_LOSS_GRACE
 	else:
-		# Snap directly onto a wall below the ceiling edge when forward movement finds one.
+		# Mirror the floor-to-wall scan: probe toward the edge at several offsets,
+		# then snap flush to the wall rather than letting the player fall/mantle.
 		if _try_wrap_ceiling_to_wall(dir):
 			return
 		_ceiling_grace -= delta
@@ -245,8 +278,6 @@ func _process_ceiling(delta: float, input_dir: int, v_input: int) -> void:
 			_drop()
 			return
 
-	# Inner corner: transfer from ceiling to a wall when the player requests down,
-	# or presses toward the wall while ceiling controls are reversed.
 	if persistent_state.is_on_wall():
 		var normal := persistent_state.get_wall_normal()
 		var into_wall := (
@@ -257,48 +288,51 @@ func _process_ceiling(delta: float, input_dir: int, v_input: int) -> void:
 			_leave_ceiling(true)
 			_start_climbing(normal)
 
-# Probe forward at several lower heights. When a wall is found, snap the player
-# flush against it before starting the wall climb (no mantle/animation step).
 func _try_wrap_ceiling_to_wall(dir: int) -> bool:
 	if dir == 0 or persistent_state.is_climb_disabled():
 		return false
 
-	var probe_direction := Vector2(signf(dir), 0.0)
+	# Use the same probe direction and vertical scan as floor-to-wall. Ceiling
+	# controls are already reversed in `dir`, so this keeps movement semantics aligned.
+	var probe_direction := Vector2(-signf(dir), 0.0)
+	var offsets: Array = [4.0, 12.0, 20.0, 28.0, 36.0]
 	var space := persistent_state.get_world_2d().direct_space_state
-	var offsets: Array[float] = [0.0, 8.0, 16.0, 24.0, 32.0, 40.0]
 	var hit: Dictionary = {}
 	var hit_offset := 0.0
 
 	for offset in offsets:
-		var from := persistent_state.global_position + Vector2(0.0, offset)
+		var ray_origin := persistent_state.global_position + Vector2(0.0, offset)
 		var query := PhysicsRayQueryParameters2D.create(
-			from,
-			from + probe_direction * persistent_state.CLIMB_PROBE_REACH,
+			ray_origin,
+			ray_origin + probe_direction * persistent_state.CLIMB_PROBE_REACH,
 			persistent_state.collision_mask,
 			[persistent_state.get_rid()]
 		)
 		var result := space.intersect_ray(query)
-		if not result.is_empty():
-			var normal: Vector2 = result.get("normal", Vector2.ZERO)
-			if absf(normal.x) > WALL_NORMAL_THRESHOLD:
-				hit = result
-				hit_offset = offset
-				break
+		if result.is_empty():
+			continue
+		var normal: Vector2 = result.get("normal", Vector2.ZERO)
+		if absf(normal.x) > WALL_NORMAL_THRESHOLD:
+			hit = result
+			hit_offset = offset
+			break
 
 	if hit.is_empty():
 		return false
 
-	var wall_normal_found: Vector2 = hit.get("normal", Vector2.ZERO)
-	var half_extents: Vector2 = persistent_state.get_collision_extents()
-	var wall_point: Vector2 = hit.get("position", persistent_state.global_position)
-	var collision_center_offset := _get_collision_center_offset()
+	var normal_found: Vector2 = hit.get("normal", Vector2.ZERO)
+	var extents := persistent_state.get_collision_extents()
+	var center_offset := _get_collision_center_offset()
+	var point: Vector2 = hit.get("position", persistent_state.global_position)
+	# Align the player's collision box with the ray hit. This is a position snap,
+	# not a mantle; the wall can be below the ceiling tile we just left.
 	persistent_state.global_position = Vector2(
-		wall_point.x + wall_normal_found.x * (half_extents.x + WALL_SNAP_EPSILON) - collision_center_offset.x,
-		wall_point.y - collision_center_offset.y
+		point.x + normal_found.x * (extents.x + WALL_SNAP_EPSILON) - center_offset.x,
+		point.y - center_offset.y
 	)
 
 	_leave_ceiling(true)
-	_start_climbing(wall_normal_found, hit_offset)
+	_start_climbing(normal_found)
 	persistent_state.velocity = Vector2.ZERO
 	_wall_grace = CORNER_GRACE
 	return true
