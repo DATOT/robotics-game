@@ -1,0 +1,71 @@
+{
+    "activeFile": "",
+    "expandedProjectPaths": [
+        "level",
+        ".",
+        "levels"
+    ],
+    "fileStates": {
+        "": {
+            "scaleInDock": 1
+        },
+        "level/level_1.tmx": {
+            "scale": 3,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 363.8333333333333,
+                "y": 323.5
+            }
+        },
+        "level/level_1.tmx#main_set": {
+            "scaleInDock": 1,
+            "scaleInEditor": 3
+        },
+        "levels/level1": {
+            "scale": 0.6791015625,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 441.0238711532931,
+                "y": 209.8360655737705
+            }
+        },
+        "levels/level1.tmx": {
+            "scale": 0.6791015625,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 414.5182628702905,
+                "y": 686.937014667817
+            }
+        },
+        "levels/level1_emb.tmx": {
+            "scale": 0.6791015625,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 383.5950532067875,
+                "y": 192.16566005176875
+            }
+        },
+        "main_set.tsx": {
+            "scaleInDock": 1,
+            "scaleInEditor": 4
+        }
+    },
+    "last.imagePath": "/home/dot/bevy/robotics-game/assets/tileset",
+    "map.lastUsedFormat": "tmx",
+    "openFiles": [
+        "level/level_1.tmx"
+    ],
+    "project": "tiled.tiled-project",
+    "recentFiles": [
+        "level/level_1.tmx",
+        "levels/level1.tmx",
+        "main_set.tsx",
+        "levels/level1_emb.tmx",
+        "levels/level1"
+    ],
+    "tileset.embedInMap": true,
+    "tileset.tileSize": {
+        "height": 16,
+        "width": 16
+    }
+}

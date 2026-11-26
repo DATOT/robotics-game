@@ -1,0 +1,23 @@
+[gd_scene format=3 uid="uid://tf5hsq31hxwv"]
+
+[ext_resource type="PackedScene" uid="uid://bwffy1njft2x4" path="res://interactables/mirror/reflector/reflector.tscn" id="2_bnbuj"]
+[ext_resource type="PackedScene" uid="uid://c1ltqc8mky6sv" path="res://interactables/laser/laser.tscn" id="2_iqngp"]
+
+[node name="Node2D" type="Node2D" unique_id=1828879737]
+
+[node name="reflector" parent="." unique_id=984532575 instance=ExtResource("2_bnbuj")]
+position = Vector2(173, 121)
+rotation = 3.5925813
+reflectOneWay = true
+
+[node name="reflector2" parent="." unique_id=840630304 instance=ExtResource("2_bnbuj")]
+position = Vector2(150.99997, 93.00001)
+rotation = 1.5771825
+reflectOneWay = true
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=2074698913]
+position = Vector2(160, 120)
+zoom = Vector2(2.5, 2.5)
+
+[node name="lazer" parent="." unique_id=2010078790 instance=ExtResource("2_iqngp")]
+position = Vector2(20, 122)

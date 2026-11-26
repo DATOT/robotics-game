@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://2bi0504fw0ae"]
+
+[ext_resource type="Script" uid="uid://wqp7w6q8ntfy" path="res://interactables/destructible_obstacle/destrutible_obstacle.gd" id="1_olu7r"]
+
+[node name="DestrutibleObstacle" type="StaticBody2D" unique_id=491220325]
+script = ExtResource("1_olu7r")
+metadata/_custom_type_script = "uid://citvot5kpxflv"
+
+[node name="Explosion" type="CPUParticles2D" parent="." unique_id=1233031416]
+emitting = false
+amount = 16
+lifetime = 0.5
+one_shot = true
+explosiveness = 1.0
+lifetime_randomness = 0.5
+emission_shape = 1
+emission_sphere_radius = 16.0
+spread = 180.0
+gravity = Vector2(0, 20)
+initial_velocity_min = 25.0
+initial_velocity_max = 100.0
+angular_velocity_min = 5.0
+angular_velocity_max = 20.0
+scale_amount_max = 2.0
+
+[connection signal="detected_light" from="." to="." method="_on_detected_light"]

@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://bwffy1njft2x4"]
+
+[ext_resource type="Script" uid="uid://c065riw8ncslo" path="res://interactables/mirror/reflector/reflector.gd" id="1_3joeu"]
+
+[sub_resource type="SegmentShape2D" id="SegmentShape2D_vyo2s"]
+a = Vector2(0, -6)
+b = Vector2(0, 6)
+
+[node name="reflector" type="StaticBody2D" unique_id=984532575]
+rotation = 0.14559563
+collision_layer = 128
+collision_mask = 0
+script = ExtResource("1_3joeu")
+canReflect = true
+
+[node name="Line2D" type="Line2D" parent="." unique_id=2029282259]
+points = PackedVector2Array(0, -6, 0, 6)
+closed = true
+width = 1.0
+default_color = Color(0.6586162, 0.8762842, 0.87455034, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1509957127]
+shape = SubResource("SegmentShape2D_vyo2s")
+one_way_collision = true
+one_way_collision_direction = Vector2(1, 0)

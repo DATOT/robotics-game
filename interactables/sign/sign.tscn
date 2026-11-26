@@ -1,0 +1,64 @@
+[gd_scene format=3 uid="uid://b7pesskga7jl2"]
+
+[ext_resource type="Texture2D" uid="uid://rgxt2tm8yykl" path="res://assets/signs/sign1.png" id="1_fsltf"]
+[ext_resource type="Script" uid="uid://bbqggnyn0f0hx" path="res://interactables/sign/sign.gd" id="1_qlyuc"]
+[ext_resource type="Texture2D" uid="uid://ci8pgvsmxv62y" path="res://assets/signs/sign2.png" id="2_qlyuc"]
+[ext_resource type="Texture2D" uid="uid://duwliyj0ithq3" path="res://assets/signs/sign3.png" id="3_sw6cp"]
+[ext_resource type="Texture2D" uid="uid://dgl60br35ypcm" path="res://assets/signs/sign4.png" id="4_jjsri"]
+[ext_resource type="Texture2D" uid="uid://cubqqrfonnt5e" path="res://assets/signs/sign5.png" id="5_o6jbb"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_ld64t"]
+font_size = 6
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_vyo2s"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_fsltf")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_qlyuc")
+}, {
+"duration": 1.0,
+"texture": ExtResource("3_sw6cp")
+}, {
+"duration": 1.0,
+"texture": ExtResource("4_jjsri")
+}, {
+"duration": 1.0,
+"texture": ExtResource("5_o6jbb")
+}],
+"loop": 1,
+"name": &"default",
+"speed": 5.0
+}]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_vyo2s"]
+size = Vector2(30, 30)
+
+[node name="sign" type="Area2D" unique_id=1308671349]
+collision_layer = 16
+collision_mask = 16
+script = ExtResource("1_qlyuc")
+
+[node name="Label" type="Label" parent="." unique_id=2060961266]
+visible = false
+offset_left = -50.0
+offset_top = -63.0
+offset_right = 50.0
+offset_bottom = -29.0
+text = "Hello, World!"
+label_settings = SubResource("LabelSettings_ld64t")
+horizontal_alignment = 1
+vertical_alignment = 2
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=596057407]
+position = Vector2(0, -16)
+sprite_frames = SubResource("SpriteFrames_vyo2s")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1701853506]
+position = Vector2(-1, -15)
+shape = SubResource("RectangleShape2D_vyo2s")
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]
+[connection signal="body_exited" from="." to="." method="_on_body_exited"]

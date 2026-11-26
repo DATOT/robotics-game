@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bcev06brexwja"]
+
+[ext_resource type="Script" uid="uid://citvot5kpxflv" path="res://utils/light_sensor_body/light_sensor_body.gd" id="1_r7des"]
+
+[node name="LightSensorBody" type="StaticBody2D" unique_id=1187429137]
+script = ExtResource("1_r7des")

@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://c1ltqc8mky6sv"]
+
+[ext_resource type="Script" uid="uid://bkin51m2fofmu" path="res://interactables/laser/laser.gd" id="1_8q6on"]
+
+[node name="laser" type="Node2D" unique_id=2010078790]
+script = ExtResource("1_8q6on")
+raysCount = 4
