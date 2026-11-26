@@ -13,6 +13,7 @@ var wall_climb_start_valid: bool = false
 const CLIMB_PROBE_STEP := 4.0    # px between probe rays going up the wall
 const CLIMB_PROBE_REACH := 24.0  # ray length into the wall; must exceed half the player's width
 const CLIMB_PROBE_MAX := 512.0   # never scan higher than this
+const CORNER_PROBE_UP := 12.0
 
 @onready var laser = $Laser
 
@@ -102,9 +103,8 @@ func is_climb_disabled() -> bool:
 
 func is_climbing() -> bool:
 	if state is MoveState:
-		return state.wall_climbing
+		return state.wall_climbing or state.on_ceiling
 	if state is IdleState:
-		# Hanging on a wall.
 		return wall_climb_start_valid and is_on_wall()
 	return false
 
@@ -113,14 +113,42 @@ func release_climb() -> void:
 	velocity = Vector2.ZERO
 	change_state("fall")
 
+func has_ceiling_near(into_wall: Vector2) -> bool:
+	var space := get_world_2d().direct_space_state
+	var offset := into_wall.normalized() * 8.0
+	var from := global_position + offset + Vector2(0.0, -8.0)
+	var query := PhysicsRayQueryParameters2D.create(
+		from,
+		from + Vector2.UP * CLIMB_PROBE_REACH,
+		collision_mask,
+		[get_rid()]
+	)
+	return not space.intersect_ray(query).is_empty()
+
+
+func probe_wall_normal(direction: Vector2) -> Vector2:
+	var space := get_world_2d().direct_space_state
+	var from := global_position + Vector2(0.0, -CORNER_PROBE_UP)
+	var query := PhysicsRayQueryParameters2D.create(
+		from,
+		from + direction.normalized() * CLIMB_PROBE_REACH,
+		collision_mask,
+		[get_rid()]
+	)
+	var hit := space.intersect_ray(query)
+	if hit.is_empty():
+		return Vector2.ZERO
+	return hit.get("normal", Vector2.ZERO)
+
 # Casts rays horizontally into the wall at increasing heights above the player and
 # returns how many pixels of wall continue above the player's current position.
 # The first ray that misses is the top of the wall (or the underside of a ceiling).
-func detect_climb_height(wall_normal: Vector2) -> float:
+func detect_climb_height(wall_normal: Vector2, probe_from: float = 0.0) -> float:
 	var space := get_world_2d().direct_space_state
 	var into_wall := Vector2(-signf(wall_normal.x), 0.0)
-	var height := 0.0
-	var offset := 0.0
+	var offset := maxf(probe_from, 0.0)
+	var height := offset
+
 	while offset <= CLIMB_PROBE_MAX:
 		var from := global_position + Vector2(0.0, -offset)
 		var query := PhysicsRayQueryParameters2D.create(
@@ -133,6 +161,7 @@ func detect_climb_height(wall_normal: Vector2) -> float:
 			break
 		height = offset
 		offset += CLIMB_PROBE_STEP
+
 	return height
 
 func has_laser_energy() -> bool:
